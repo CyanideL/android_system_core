@@ -260,7 +260,6 @@ bool BatteryMonitor::update(void) {
 
             if (!strcmp(name, ".") || !strcmp(name, ".."))
                 continue;
->>>>>>> 31c2a74... healthd: dock battery
 
     for (i = 0; i < mChargerNames.size(); i++) {
         String8 path;
@@ -408,7 +407,6 @@ bool BatteryMonitor::update(void) {
                      props.chargerUsbOnline ? "u" : "",
                      props.chargerWirelessOnline ? "w" : "",
                      props.chargerDockAcOnline ? "d" : "");
->>>>>>> 31c2a74... healthd: dock battery
     }
 
     healthd_mode_ops->battery_update(&props);
