@@ -218,9 +218,13 @@ bool BatteryMonitor::update(void) {
         String8 path;
         path.appendFormat("%s/%s/online", POWER_SUPPLY_SYSFS_PATH,
                           mChargerNames[i].string());
-
-        if (readFromFile(path, buf, SIZE) > 0) {
-            if (buf[0] != '0') {
+            // Look for "type" file in each subdirectory
+            path.clear();
+            path.appendFormat("%s/%s/type", POWER_SUPPLY_SYSFS_PATH, name);
+            switch(readPowerSupplyType(path)) {
+            case ANDROID_POWER_SUPPLY_TYPE_BATTERY:
+                break;
+            default:
                 path.clear();
                 path.appendFormat("%s/%s/type", POWER_SUPPLY_SYSFS_PATH,
                                   mChargerNames[i].string());
@@ -247,9 +251,11 @@ bool BatteryMonitor::update(void) {
                         props.maxChargingCurrent = maxChargingCurrent;
                     }
                 }
-            }
-        }
-    }
+                break;
+            } //switch
+        } //while
+        closedir(dir);
+    }//else
 
     logthis = !healthd_board_battery_update(&props);
 
