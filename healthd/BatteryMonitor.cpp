@@ -137,6 +137,8 @@ BatteryMonitor::PowerSupplyType BatteryMonitor::readPowerSupplyType(const String
             { "USB_DCP", ANDROID_POWER_SUPPLY_TYPE_AC },
             { "USB_CDP", ANDROID_POWER_SUPPLY_TYPE_AC },
             { "USB_ACA", ANDROID_POWER_SUPPLY_TYPE_AC },
+            { "USB_HVDCP", ANDROID_POWER_SUPPLY_TYPE_AC },
+            { "USB_HVDCP_3", ANDROID_POWER_SUPPLY_TYPE_AC },
             { "Wireless", ANDROID_POWER_SUPPLY_TYPE_WIRELESS },
             { "Wipower", ANDROID_POWER_SUPPLY_TYPE_WIRELESS },
             { "DockBattery", ANDROID_POWER_SUPPLY_TYPE_DOCK_BATTERY },
@@ -261,10 +263,6 @@ bool BatteryMonitor::update(void) {
             if (!strcmp(name, ".") || !strcmp(name, ".."))
                 continue;
 
-    for (i = 0; i < mChargerNames.size(); i++) {
-        String8 path;
-        path.appendFormat("%s/%s/online", POWER_SUPPLY_SYSFS_PATH,
-                          mChargerNames[i].string());
             // Look for "type" file in each subdirectory
             path.clear();
             path.appendFormat("%s/%s/type", POWER_SUPPLY_SYSFS_PATH, name);
@@ -274,25 +272,7 @@ bool BatteryMonitor::update(void) {
                 break;
             default:
                 path.clear();
-                path.appendFormat("%s/%s/type", POWER_SUPPLY_SYSFS_PATH,
-                                  mChargerNames[i].string());
-                switch(readPowerSupplyType(path)) {
-                case ANDROID_POWER_SUPPLY_TYPE_AC:
-                    props.chargerAcOnline = true;
-                    break;
-                case ANDROID_POWER_SUPPLY_TYPE_USB:
-                    props.chargerUsbOnline = true;
-                    break;
-                case ANDROID_POWER_SUPPLY_TYPE_WIRELESS:
-                    props.chargerWirelessOnline = true;
-                    break;
-                default:
-                    KLOG_WARNING(LOG_TAG, "%s: Unknown power supply type\n",
-                                 mChargerNames[i].string());
-                }
-                path.clear();
-                path.appendFormat("%s/%s/current_max", POWER_SUPPLY_SYSFS_PATH,
-                                  mChargerNames[i].string());
+                path.appendFormat("%s/%s/online", POWER_SUPPLY_SYSFS_PATH, name);
                 if (access(path.string(), R_OK) == 0) {
                     mChargerNames.add(String8(name));
                     if (readFromFile(path, buf, SIZE) > 0) {
@@ -318,6 +298,15 @@ bool BatteryMonitor::update(void) {
                                 KLOG_WARNING(LOG_TAG, "%s: Unknown power supply type\n",
                                              name);
                             }
+                            path.clear();
+                            path.appendFormat("%s/%s/current_max", POWER_SUPPLY_SYSFS_PATH,
+                                           name);
+                            if (access(path.string(), R_OK) == 0) {
+                                int maxChargingCurrent = getIntField(path);
+                                if (props.maxChargingCurrent < maxChargingCurrent) {
+                                       props.maxChargingCurrent = maxChargingCurrent;
+                                }
+                           }
                         }
                     }
                 }
@@ -354,6 +343,27 @@ bool BatteryMonitor::update(void) {
                  "battery none");
         }
 
+        if (props.dockBatteryPresent) {
+            snprintf(dmesglinedock, sizeof(dmesglinedock),
+                 "dock-battery [l=%d v=%d t=%s%d.%d h=%d st=%d]",
+                 props.dockBatteryLevel, props.dockBatteryVoltage,
+                 props.dockBatteryTemperature < 0 ? "-" : "",
+                 abs(props.dockBatteryTemperature / 10),
+                 abs(props.dockBatteryTemperature % 10), props.dockBatteryHealth,
+                 props.dockBatteryStatus);
+
+            if (!mHealthdConfig->dockBatteryCurrentNowPath.isEmpty()) {
+                int c = getIntField(mHealthdConfig->dockBatteryCurrentNowPath);
+                char b[20];
+
+                snprintf(b, sizeof(b), " c=%d", c / 1000);
+                strlcat(dmesglinedock, b, sizeof(dmesglinedock));
+            }
+        } else {
+            snprintf(dmesglinedock, sizeof(dmesglinedock),
+                 "dock-battery none");
+        }
+
         size_t len = strlen(dmesgline);
         snprintf(dmesgline + len, sizeof(dmesgline) - len, " chg=%s%s%s",
                  props.chargerAcOnline ? "a" : "",
@@ -380,33 +390,6 @@ bool BatteryMonitor::update(void) {
         }
 
         KLOG_WARNING(LOG_TAG, "%s\n", dmesgline);
-=======
-        if (props.dockBatteryPresent) {
-            snprintf(dmesglinedock, sizeof(dmesglinedock),
-                 "dock-battery [l=%d v=%d t=%s%d.%d h=%d st=%d]",
-                 props.dockBatteryLevel, props.dockBatteryVoltage,
-                 props.dockBatteryTemperature < 0 ? "-" : "",
-                 abs(props.dockBatteryTemperature / 10),
-                 abs(props.dockBatteryTemperature % 10), props.dockBatteryHealth,
-                 props.dockBatteryStatus);
-
-            if (!mHealthdConfig->dockBatteryCurrentNowPath.isEmpty()) {
-                int c = getIntField(mHealthdConfig->dockBatteryCurrentNowPath);
-                char b[20];
-
-                snprintf(b, sizeof(b), " c=%d", c / 1000);
-                strlcat(dmesglinedock, b, sizeof(dmesglinedock));
-            }
-        } else {
-            snprintf(dmesglinedock, sizeof(dmesglinedock),
-                 "dock-battery none");
-        }
-
-        KLOG_WARNING(LOG_TAG, "%s %s chg=%s%s%s%s\n", dmesgline, dmesglinedock,
-                     props.chargerAcOnline ? "a" : "",
-                     props.chargerUsbOnline ? "u" : "",
-                     props.chargerWirelessOnline ? "w" : "",
-                     props.chargerDockAcOnline ? "d" : "");
     }
 
     healthd_mode_ops->battery_update(&props);
@@ -543,9 +526,9 @@ void BatteryMonitor::dumpState(int fd) {
     int v;
     char vs[128];
 
-    snprintf(vs, sizeof(vs), "ac: %d usb: %d wireless: %d dock-ac: %d\n",
+    snprintf(vs, sizeof(vs), "ac: %d usb: %d wireless: %d dock-ac: %d current_max: %d\n",
              props.chargerAcOnline, props.chargerUsbOnline,
-             props.chargerWirelessOnline, props.chargerDockAcOnline);
+             props.chargerWirelessOnline, props.chargerDockAcOnline, props.maxChargingCurrent);
     write(fd, vs, strlen(vs));
     snprintf(vs, sizeof(vs), "status: %d health: %d present: %d\n",
              props.batteryStatus, props.batteryHealth, props.batteryPresent);

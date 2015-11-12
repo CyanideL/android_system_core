@@ -47,8 +47,7 @@ LOCAL_SRC_FILES:= \
     signal_handler.cpp \
     ueventd.cpp \
     ueventd_parser.cpp \
-    watchdogd.cpp \
-    vendor_init.cpp
+    watchdogd.cpp
 
 SYSTEM_CORE_INIT_DEFINES := BOARD_CHARGING_MODE_BOOTING_LPM \
     BOARD_CHARGING_CMDLINE_NAME \
